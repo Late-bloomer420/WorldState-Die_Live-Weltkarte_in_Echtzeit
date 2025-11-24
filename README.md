@@ -1,0 +1,2 @@
+# WorldState-Die_Live-Weltkarte_in_Echtzeit
+Menschen lieben Daten und Visualisierung → aber alles ist verstreut. USP: Die App zeigt die Welt in Echtzeit:  Beispiele für Live-Layer:  Wetter, Stürme, Naturkatastrophen  Wirtschaftliche Lage (Preise, Börsen, Ressourcen)  Politik, Krisen, Konflikte  Verkehr, Stromnetz, CO₂, Trends  Social Media Heatmaps  Der Nutzer bekommt:  Die schönste, futuristischste Live-Darstellung unseres Planeten.
