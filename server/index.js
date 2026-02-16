@@ -1,79 +1,22 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import http from 'http';
-import cors from 'cors';
-import dotenv from 'dotenv';
-dotenv.config();
+import { ALPS_RESORTS, SKI_EVENT_TEMPLATES } from './data/resort-data.js';
+import CyberFetcher from './cyber-fetcher.js';
 
-import { GUB_REGIONS, EVENT_TEMPLATES, HOTSPOT_LOCATIONS, EVENT_SOURCES, RELIABILITY_BADGES } from './data/gub-regions.js';
-import { APIFetcher } from './api-fetcher.js';
 
-// ── Real API Integration ────────────────────────────────────────
-const apiFetcher = new APIFetcher();
-
-/**
- * ══════════════════════════════════════════════════════════════════
- *  PRIVACY PRINCIPLES — PLANET MODE
- * ══════════════════════════════════════════════════════════════════
- *
- *  This server operates on a strict no-tracking policy:
- *
- *  1. NO USER DATA COLLECTION
- *     - No IP addresses logged or stored
- *     - No user IDs, session tokens, or cookies
- *     - No device fingerprinting
- *
- *  2. UNIDIRECTIONAL DATA FLOW
- *     - Server broadcasts public data to all clients
- *     - Clients never send data back (no ws.on('message') handler)
- *     - No personalization or profiling
- *
- *  3. STATELESS OPERATION
- *     - No user sessions
- *     - No request history
- *     - Health endpoint shows only aggregate metrics
- *
- *  4. SOURCE TRANSPARENCY
- *     - Every data point includes source attribution
- *     - All data sources are publicly verifiable (28+ providers)
- *
- *  This architecture makes surveillance structurally impossible.
- * ══════════════════════════════════════════════════════════════════
- */
-
-const PORT = process.env.PORT || 8080;
-const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+const PORT = 8080;
 
 // ── HTTP server for health check ────────────────────────────────
-const app = http.createServer((req, res) => {
-    // Basic CORS for Health Endpoint
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-
-    if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
-    }
-
+const httpServer = http.createServer((req, res) => {
     if (req.url === '/health') {
-        res.writeHead(200, {
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-store'    // No caching of health data
-        });
-        // Health endpoint shows ONLY aggregate metrics — no user/connection details
-        const apiStats = apiFetcher.getStats();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             status: 'ok',
-            uptime: Math.floor(process.uptime()),
-            clients: wss.clients.size,      // Anonymous count only
+            uptime: process.uptime(),
+            clients: wss.clients.size,
             eventsEmitted: stats.eventsEmitted,
-            realEventsEmitted: stats.realEventsEmitted,
-            apis: {
-                usgs: { fetches: apiStats.earthquakeFetches, lastFetch: apiStats.lastEarthquakeFetch },
-                openMeteo: { fetches: apiStats.weatherFetches, lastFetch: apiStats.lastWeatherFetch },
-                errors: apiStats.errors,
-                cacheSize: apiStats.cacheSize
-            }
+            mode: 'ALPS_EDITION',
+            cyber: cyberFetcher.getHealth()
         }));
     } else {
         res.writeHead(404);
@@ -81,13 +24,15 @@ const app = http.createServer((req, res) => {
     }
 });
 
-// ── WebSocket server ────────────────────────────────────────────
-const wss = new WebSocketServer({ server: app });
 
-const stats = { eventsEmitted: 0, realEventsEmitted: 0 };
+const wss = new WebSocketServer({ server: httpServer });
+const cyberFetcher = new CyberFetcher();
+
+const stats = { eventsEmitted: 0 };
+
 const SEVERITY_LEVELS = ['low', 'medium', 'high', 'critical'];
-const EVENT_TYPES = ['urban_growth', 'conflict', 'infrastructure', 'disaster', 'protest', 'weather'];
-const EVENT_WEIGHTS = [0.20, 0.20, 0.10, 0.15, 0.10, 0.25]; // probability weights
+const EVENT_TYPES = ['powder_alert', 'lift_closure', 'grooming_report', 'event_alert', 'avalanche_warning'];
+const EVENT_WEIGHTS = [0.25, 0.15, 0.25, 0.25, 0.10]; // probability weights
 
 /**
  * Pick a random item from an array
@@ -110,9 +55,9 @@ function weightedEventType() {
 }
 
 /**
- * Add slight randomness to coordinates (±0.05 degrees)
+ * Add slight randomness to coordinates (±0.005 degrees - tighter for resorts)
  */
-function jitter(coords, amount = 0.05) {
+function jitter(coords, amount = 0.008) {
     return [
         coords[0] + (Math.random() - 0.5) * amount * 2,
         coords[1] + (Math.random() - 0.5) * amount * 2
@@ -120,84 +65,36 @@ function jitter(coords, amount = 0.05) {
 }
 
 /**
- * Generate a simulated GUB urban growth event
+ * Generate a simulated ski event
  */
-function generateUrbanGrowthEvent() {
-    const region = pick(GUB_REGIONS);
-    const growth = region.imperviousKm2;
-    const currentGrowthRate = ((growth.y2024 - growth.y2020) / growth.y2020 * 100).toFixed(1);
+function generateEvent() {
+    const type = weightedEventType();
+    const resort = pick(ALPS_RESORTS);
 
-    const source = pick(EVENT_SOURCES.urban_growth);
-    const badge = RELIABILITY_BADGES[source.reliability] || RELIABILITY_BADGES.community;
-    return {
-        id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        type: 'urban_growth',
-        severity: parseFloat(currentGrowthRate) > 10 ? 'high' : parseFloat(currentGrowthRate) > 5 ? 'medium' : 'low',
-        coords: jitter(region.center, 0.03),
-        timestamp: new Date().toISOString(),
-        source: {
-            name: source.name,
-            url: source.url,
-            updateFrequency: source.updateFrequency,
-            reliability: source.reliability,
-            lastVerified: source.lastVerified,
-            badge: { label: badge.label, icon: badge.icon, color: badge.color }
-        },
-        metadata: {
-            city: region.name,
-            country: region.country,
-            message: pick(EVENT_TEMPLATES.urban_growth),
-            population: region.population,
-            imperviousKm2: growth.y2024,
-            growthRate: `${currentGrowthRate}%`,
-            polygon: region.polygon
-        }
-    };
-}
+    // Determine severity based on type
+    let severity = 'low';
+    if (type === 'powder_alert') severity = 'medium'; // Info/Good news
+    if (type === 'lift_closure') severity = 'high';
+    if (type === 'avalanche_warning') severity = 'critical';
 
-/**
- * Generate a simulated conflict/infrastructure/disaster/protest event
- */
-function generateHotspotEvent(type) {
-    const location = pick(HOTSPOT_LOCATIONS);
-    const severity = pick(SEVERITY_LEVELS);
+    // Override severity randomly sometimes
+    if (Math.random() > 0.8) severity = pick(SEVERITY_LEVELS);
 
-    const sourceDefs = EVENT_SOURCES[type] || EVENT_SOURCES.conflict;
-    const source = pick(sourceDefs);
-    const badge = RELIABILITY_BADGES[source.reliability] || RELIABILITY_BADGES.community;
     return {
         id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         type,
         severity,
-        coords: jitter(location.coords, 0.08),
+        coords: jitter(resort.coords, 0.015), // Jitter around resort center
         timestamp: new Date().toISOString(),
-        source: {
-            name: source.name,
-            url: source.url,
-            updateFrequency: source.updateFrequency,
-            reliability: source.reliability,
-            lastVerified: source.lastVerified,
-            badge: { label: badge.label, icon: badge.icon, color: badge.color }
-        },
         metadata: {
-            location: location.name,
-            region: location.region,
-            message: pick(EVENT_TEMPLATES[type]),
-            verified: Math.random() > 0.3,
-            sources: Math.floor(Math.random() * 5) + 1
+            resortId: resort.id,
+            resortName: resort.name,
+            country: resort.country,
+            message: pick(SKI_EVENT_TEMPLATES[type]),
+            temp: resort.stats.temp + Math.floor(Math.random() * 3) - 1, // Slight temp variation
+            wind: resort.stats.wind + Math.floor(Math.random() * 10) - 5
         }
     };
-}
-
-/**
- * Generate a random event
- */
-function generateEvent() {
-    const type = weightedEventType();
-    if (type === 'urban_growth') {
-        return generateUrbanGrowthEvent();
-    }
-    return generateHotspotEvent(type);
 }
 
 /**
@@ -213,73 +110,64 @@ function broadcast(data) {
 }
 
 /**
- * Send initial GUB data to a newly connected client
+ * Send initial data to a newly connected client
  */
-async function sendInitialData(ws) {
-    // Fetch real earthquakes for initial load
-    const earthquakes = await apiFetcher.fetchEarthquakes();
-    const recentQuakes = earthquakes.slice(0, 10); // Latest 10
-
+function sendInitialData(ws) {
     ws.send(JSON.stringify({
         type: 'init',
         payload: {
-            gubRegions: GUB_REGIONS,
-            serverTime: new Date().toISOString(),
-            recentEarthquakes: recentQuakes
+            resorts: ALPS_RESORTS,
+            serverTime: new Date().toISOString()
         }
     }));
 }
 
-// ── Connection handling (ANONYMOUS — no user data collected) ────
-wss.on('connection', (ws) => {
-    // NO TRACKING: Client IP is never logged or stored
-    // Connection is anonymous and stateless
-    console.log(`[WS] Client connected (anonymous) — total: ${wss.clients.size}`);
+// ── Connection handling ─────────────────────────────────────────
+wss.on('connection', (ws, req) => {
+    const clientIp = req.socket.remoteAddress;
+    console.log(`[WS] Client connected (${clientIp}) — total: ${wss.clients.size}`);
 
     sendInitialData(ws);
 
     ws.on('close', () => {
-        console.log(`[WS] Client disconnected (anonymous) — total: ${wss.clients.size}`);
+        console.log(`[WS] Client disconnected — total: ${wss.clients.size}`);
     });
 
     ws.on('error', (err) => {
-        // Log error type only — no client-identifying information
-        console.error(`[WS] Connection error: ${err.code || 'UNKNOWN'}`);
+        console.error(`[WS] Error:`, err.message);
     });
-
-    // NOTE: No ws.on('message') handler exists intentionally.
-    // This server is broadcast-only. Clients cannot send data.
 });
 
-// ── Hybrid event generation loop (real + simulated) ────────────
+/**
+ * Generate a cyber threat event (if enabled)
+ */
+async function generateCyberEvent() {
+    if (!cyberFetcher.enabled) return null;
+
+    // 10% chance to try generating a cyber event
+    if (Math.random() < 0.1) {
+        return await cyberFetcher.getRandomCyberThreat();
+    }
+    return null;
+}
+
+// ── Event generation loop ───────────────────────────────────────
 function startEventLoop() {
     const emit = async () => {
         if (wss.clients.size > 0) {
-            const useRealData = Math.random() < 0.6; // 60% real, 40% simulated
-            let event = null;
-
-            if (useRealData) {
-                // Alternate between earthquake and weather
-                if (Math.random() < 0.5) {
-                    event = await apiFetcher.getRandomEarthquake();
-                } else {
-                    event = await apiFetcher.fetchWeatherEvent();
-                }
-            }
-
-            if (event) {
-                // Real API data
-                broadcast({ type: 'event', payload: event });
-                stats.realEventsEmitted++;
+            // Check for cyber event first
+            const cyberEvent = await generateCyberEvent();
+            if (cyberEvent) {
+                broadcast({ type: 'event', payload: cyberEvent });
+                console.log(`[Event] 🛡️ Cyber Threat: ${cyberEvent.subtype} in ${cyberEvent.location.country}`);
             } else {
-                // Fallback to simulated
-                event = generateEvent();
-                event.source.live = false;
+                // Normal ski event
+                const event = generateEvent();
                 broadcast({ type: 'event', payload: event });
             }
             stats.eventsEmitted++;
         }
-        // Random interval: 2–5 seconds
+        // Ski events every 2-5 seconds
         const delay = 2000 + Math.random() * 3000;
         setTimeout(emit, delay);
     };
@@ -287,17 +175,14 @@ function startEventLoop() {
 }
 
 // ── Start server ────────────────────────────────────────────────
-app.listen(PORT, HOST, () => {
+httpServer.listen(PORT, () => {
     console.log(`
 ╔══════════════════════════════════════════════╗
-║       🌍  WorldState WebSocket Server        ║
+║    🏔 WorldState: ALPS EDITION Server       ║
 ║──────────────────────────────────────────────║
-║  URL       : ${process.env.NODE_ENV === 'production' ? 'wss://' : 'ws://'}${HOST}:${PORT}             ║
-║  Health    : http://${HOST}:${PORT}/health     ║
-║  GUB Cities: ${GUB_REGIONS.length} regions loaded             ║
-║  Hotspots  : ${HOTSPOT_LOCATIONS.length} locations tracked           ║
-║  APIs      : USGS Earthquake + Open-Meteo   ║
-║  Privacy   : NO TRACKING / BROADCAST-ONLY   ║
+║  WebSocket : ws://localhost:${PORT}             ║
+║  Resorts   : ${ALPS_RESORTS.length} major hubs             ║
+║  Status    : Ready for powder!               ║
 ╚══════════════════════════════════════════════╝
   `);
     startEventLoop();

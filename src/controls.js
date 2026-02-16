@@ -1,160 +1,70 @@
+
 /**
- * WorldState — Control Panel
- * Layer toggles, time filters, and region preset buttons
+ * Control Panel Module
+ * Manages layer toggles and region presets
  */
 
-import { REGION_PRESETS } from './map.js';
+import { toggleCyberLayer } from './map.js';
 
-// ── Layer Definitions ────────────────────────────────
-const LAYER_DEFS = [
-    { id: 'gub_boundaries', label: 'GUB Boundaries', color: '#06b6d4', icon: '🗺' },
-    { id: 'urban_growth', label: 'Urban Growth', color: '#06b6d4', icon: '🏗' },
-    { id: 'weather', label: 'Weather', color: '#38bdf8', icon: '🌦' },
-    { id: 'conflict', label: 'Conflicts', color: '#ef4444', icon: '⚔' },
-    { id: 'infrastructure', label: 'Infrastructure', color: '#f59e0b', icon: '⚡' },
-    { id: 'disaster', label: 'Disasters', color: '#a855f7', icon: '🌋' },
-    { id: 'protest', label: 'Protests', color: '#ec4899', icon: '✊' }
-];
 
-// ── Time Filters ─────────────────────────────────────
-const TIME_FILTERS = [
-    { id: '1h', label: '1H' },
-    { id: '6h', label: '6H' },
-    { id: '24h', label: '24H', default: true },
-    { id: '7d', label: '7D' }
-];
+export function initControls(map) {
+  const panel = document.getElementById('control-panel');
+  if (!panel) return;
 
-export class ControlPanel {
-    constructor(worldMap) {
-        this.worldMap = worldMap;
-        this.activeTimeFilter = '24h';
-        this.activeRegion = 'global';
-        this.onLayerToggle = null; // callback
+  panel.innerHTML = `
+    <div class="header-subtitle" style="margin-left:0; padding-left:0; border:none; margin-bottom:12px;">LAYERS</div>
+    
+    <div class="toggle-group">
+      <div class="toggle-btn active" data-layer="resorts">
+        <span class="toggle-icon">🏔</span>
+        <span class="label">Resorts</span>
+      </div>
+      <div class="toggle-btn" data-layer="runs">
+        <span class="toggle-icon">⛷</span>
+        <span class="label">Ski Runs</span>
+      </div>
+      <div class="toggle-btn" data-layer="lifts">
+        <span class="toggle-icon">🚡</span>
+        <span class="label">Lifts</span>
+      </div>
+      <div class="toggle-btn" data-layer="avalanche">
+        <span class="toggle-icon">⚠️</span>
+        <span class="label">Avalanche Risk</span>
+      </div>
+        <span class="toggle-icon">📷</span>
+        <span class="label">Webcams</span>
+      </div>
+      <div class="toggle-btn layer-toggle--cyber" data-layer="cyber">
+        <span class="toggle-icon">🛡️</span>
+        <span class="label">Cyber Threats</span>
+        <span class="layer-toggle__badge">BETA</span>
+      </div>
 
-        this._renderLayerToggles();
-        this._renderTimeFilters();
-        this._renderRegionPresets();
-    }
+    </div>
 
-    /**
-     * Render layer toggle buttons
-     */
-    _renderLayerToggles() {
-        const container = document.getElementById('layer-toggles');
-        if (!container) return;
+    <div class="header-subtitle" style="margin-top:20px; margin-left:0; padding-left:0; border:none; margin-bottom:12px;">TIME</div>
+    <div class="time-pills" style="display:flex; gap:4px;">
+      <div class="pill active" style="padding:4px 8px; font-size:10px; background:rgba(19, 236, 236, 0.2); color:#13ecec; border-radius:12px;">NO</div>
+      <div class="pill" style="padding:4px 8px; font-size:10px; background:rgba(255,255,255,0.1); color:#94a3b8; border-radius:12px;">1H</div>
+      <div class="pill" style="padding:4px 8px; font-size:10px; background:rgba(255,255,255,0.1); color:#94a3b8; border-radius:12px;">24H</div>
+    </div>
+  `;
 
-        LAYER_DEFS.forEach(layer => {
-            const btn = document.createElement('button');
-            btn.className = 'layer-toggle active';
-            btn.dataset.layer = layer.id;
-            btn.innerHTML = `
-        <span class="layer-toggle-dot" style="color:${layer.color}"></span>
-        <span class="layer-toggle-label">${layer.icon} ${layer.label}</span>
-        <span class="layer-toggle-count" id="count-${layer.id}">0</span>
-      `;
-
-            btn.addEventListener('click', () => {
-                const isActive = btn.classList.toggle('active');
-                this.worldMap.toggleLayer(layer.id, isActive);
-                if (this.onLayerToggle) this.onLayerToggle(layer.id, isActive);
-            });
-
-            container.appendChild(btn);
-        });
-    }
-
-    /**
-     * Render time filter buttons
-     */
-    _renderTimeFilters() {
-        const container = document.getElementById('time-filters');
-        if (!container) return;
-
-        TIME_FILTERS.forEach(tf => {
-            const btn = document.createElement('button');
-            btn.className = `time-btn ${tf.default ? 'active' : ''}`;
-            btn.textContent = tf.label;
-            btn.dataset.time = tf.id;
-
-            btn.addEventListener('click', () => {
-                container.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.activeTimeFilter = tf.id;
-                // Time filter is cosmetic in this prototype — events continue streaming
-            });
-
-            container.appendChild(btn);
-        });
-    }
-
-    /**
-     * Render region preset buttons
-     */
-    _renderRegionPresets() {
-        const container = document.getElementById('region-presets');
-        if (!container) return;
-
-        Object.entries(REGION_PRESETS).forEach(([key, region]) => {
-            const btn = document.createElement('button');
-            btn.className = `region-btn ${key === 'global' ? 'active' : ''}`;
-            btn.textContent = region.label;
-            btn.dataset.region = key;
-
-            btn.addEventListener('click', () => {
-                container.querySelectorAll('.region-btn').forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.activeRegion = key;
-                this.worldMap.flyToRegion(key);
-            });
-
-            container.appendChild(btn);
-        });
-    }
-
-    /**
-     * Update layer counts in the control panel
-     */
-    updateCounts(counts) {
-        for (const [name, count] of Object.entries(counts)) {
-            const el = document.getElementById(`count-${name}`);
-            if (el) el.textContent = count;
+  // Simple toggle logic for demo visuals
+  const toggles = panel.querySelectorAll('.toggle-btn');
+  toggles.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const layer = btn.dataset.layer;
+      if (layer === 'cyber') {
+        const isNowActive = !btn.classList.contains('active');
+        const success = await toggleCyberLayer(isNowActive);
+        if (success) {
+          btn.classList.toggle('active');
         }
-    }
+      } else {
+        btn.classList.toggle('active');
+      }
+    });
+  });
 
-    /**
-     * Update connection status badge
-     */
-    updateStatus(state) {
-        const badge = document.getElementById('status-badge');
-        if (!badge) return;
-
-        const dot = badge.querySelector('.status-dot');
-        const text = badge.querySelector('.status-text');
-
-        badge.className = 'status-badge';
-
-        switch (state) {
-            case 'connected':
-                badge.classList.add('connected');
-                text.textContent = 'Live';
-                break;
-            case 'connecting':
-                badge.classList.add('reconnecting');
-                text.textContent = 'Connecting…';
-                break;
-            case 'reconnecting':
-                badge.classList.add('reconnecting');
-                text.textContent = 'Reconnecting…';
-                break;
-            case 'disconnected':
-                badge.classList.add('disconnected');
-                text.textContent = 'Disconnected';
-                break;
-            case 'error':
-            case 'failed':
-                badge.classList.add('disconnected');
-                text.textContent = 'Error';
-                break;
-        }
-    }
 }
