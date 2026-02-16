@@ -1,0 +1,441 @@
+/**
+ * map-integration.patch
+ * Integration des Cyber Layers in map-view.js
+ * 
+ * ANWENDUNG:
+ * 1. Öffne src/map-view.js
+ * 2. Importiere die neuen Module
+ * 3. Füge Cyber Layer Group hinzu
+ * 4. Erweitere Event Handling
+ * 5. Update Controls
+ */
+
+// ============================================
+// SECTION 1: IMPORTS (am Anfang der Datei)
+// ============================================
+
+import cyberOnboarding from './cyber-onboarding.js';
+import protectionGuide from './protection-guide.js';
+
+// ============================================
+// SECTION 2: LAYER GROUPS (in initMap)
+// ============================================
+
+// Füge nach den bestehenden Layer Groups hinzu:
+
+this.layers.cyber = L.layerGroup().addTo(this.map);
+
+// In der controls Object:
+this.layerControls = {
+  conflicts: true,
+  disasters: true,
+  humanitarian: true,
+  energy: true,
+  weather: true,
+  cyber: false // Default: disabled, needs onboarding
+};
+
+// ============================================
+// SECTION 3: CYBER LAYER TOGGLE (neue Methode)
+// ============================================
+
+/**
+ * Toggle Cyber Layer with onboarding check
+ */
+async toggleCyberLayer(enabled) {
+  if (enabled && cyberOnboarding.shouldShow()) {
+    // Show onboarding modal first
+    const accepted = await cyberOnboarding.show();
+    
+    if (!accepted) {
+      // User declined, keep layer disabled
+      this.layerControls.cyber = false;
+      return false;
+    }
+  }
+
+  this.layerControls.cyber = enabled;
+  
+  if (enabled) {
+    this.layers.cyber.addTo(this.map);
+    console.log('🛡️ Cyber Layer activated');
+  } else {
+    this.map.removeLayer(this.layers.cyber);
+    console.log('🛡️ Cyber Layer deactivated');
+  }
+
+  return true;
+}
+
+// ============================================
+// SECTION 4: CYBER MARKER CREATION
+// ============================================
+
+/**
+ * Create marker for cyber threat
+ */
+createCyberMarker(event) {
+  const isMobile = window.innerWidth <= 768;
+  
+  // Marker icon based on subtype
+  const iconConfig = {
+    c2_server: {
+      icon: '🔴',
+      color: '#dc2626',
+      className: 'cyber-marker cyber-marker--c2'
+    },
+    malware_host: {
+      icon: '🟣',
+      color: '#8b5cf6',
+      className: 'cyber-marker cyber-marker--malware'
+    }
+  };
+
+  const config = iconConfig[event.subtype] || iconConfig.c2_server;
+
+  const icon = L.divIcon({
+    html: `
+      <div class="marker-pulse" style="background: ${config.color}"></div>
+      <div class="marker-icon">${config.icon}</div>
+    `,
+    className: config.className,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20]
+  });
+
+  const marker = L.marker([event.location.lat, event.location.lng], { icon })
+    .addTo(this.layers.cyber);
+
+  // Popup content
+  const popupContent = this.createCyberPopup(event);
+  
+  marker.bindPopup(popupContent, {
+    maxWidth: isMobile ? 280 : 400,
+    className: 'cyber-popup'
+  });
+
+  // Store reference
+  this.markers.push({
+    marker,
+    event,
+    layer: 'cyber'
+  });
+
+  return marker;
+}
+
+/**
+ * Create popup content for cyber threat
+ */
+createCyberPopup(event) {
+  const typeLabels = {
+    c2_server: 'Botnet C2 Server',
+    malware_host: 'Malware Distribution'
+  };
+
+  return `
+    <div class="popup-cyber">
+      <div class="popup-header">
+        <h3>${event.title}</h3>
+        <span class="popup-badge popup-badge--${event.severity}">
+          ${event.severity.toUpperCase()}
+        </span>
+      </div>
+      
+      <div class="popup-body">
+        <p><strong>${typeLabels[event.subtype]}</strong></p>
+        <p>${event.message}</p>
+        
+        <div class="popup-location">
+          📍 ${event.location.region}, ${event.location.country}
+        </div>
+
+        <!-- Educational Section -->
+        <div class="popup-educational">
+          <h4>ℹ️ Was ist das?</h4>
+          <p>${event.educational.what}</p>
+          
+          <h4>⚠️ Risiko</h4>
+          <p>${event.educational.risk}</p>
+        </div>
+
+        <!-- Technical Details -->
+        <details class="popup-technical">
+          <summary>🔬 Technische Details</summary>
+          <dl>
+            ${event.technical.ip ? `<dt>IP-Adresse:</dt><dd><code>${event.technical.ip}</code></dd>` : ''}
+            ${event.technical.url ? `<dt>URL:</dt><dd><code>${event.technical.url}</code></dd>` : ''}
+            ${event.technical.malware_family ? `<dt>Malware:</dt><dd>${event.technical.malware_family}</dd>` : ''}
+            ${event.technical.port ? `<dt>Port:</dt><dd>${event.technical.port}</dd>` : ''}
+            <dt>Erstmals gesehen:</dt><dd>${new Date(event.technical.first_seen).toLocaleDateString('de-DE')}</dd>
+            ${event.technical.last_seen ? `<dt>Zuletzt aktiv:</dt><dd>${new Date(event.technical.last_seen).toLocaleDateString('de-DE')}</dd>` : ''}
+            <dt>Verifikation:</dt><dd>${event.technical.confidence}</dd>
+          </dl>
+        </details>
+
+        <!-- Quick Protection Tips -->
+        <div class="popup-protection-preview">
+          <h4>🛡️ Schutzmaßnahmen</h4>
+          <ul>
+            ${event.educational.protection.slice(0, 2).map(tip => `<li>${tip}</li>`).join('')}
+          </ul>
+          <button 
+            class="popup-btn popup-btn--guide" 
+            onclick="window.showProtectionGuide('${event.subtype}')"
+          >
+            Vollständigen Schutz-Guide anzeigen →
+          </button>
+        </div>
+
+        <!-- Source Attribution -->
+        <div class="popup-source">
+          <div class="popup-source__badge">
+            <span style="color: ${event.badge.color}">${event.badge.icon}</span>
+            ${event.badge.label}
+          </div>
+          <a href="${event.source.url}" target="_blank" rel="noopener">
+            ${event.source.name} ↗
+          </a>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// SECTION 5: EVENT HANDLING UPDATE
+// ============================================
+
+// In der handleNewEvent() Methode, füge hinzu:
+
+handleNewEvent(event) {
+  // Bestehender Code für andere Event-Typen...
+  
+  // NEU: Cyber Events
+  if (event.type === 'cyber') {
+    if (this.layerControls.cyber) {
+      const marker = this.createCyberMarker(event);
+      
+      // Auto-focus on first cyber event (educational)
+      if (this.markers.filter(m => m.layer === 'cyber').length === 1) {
+        this.map.setView([event.location.lat, event.location.lng], 6);
+        marker.openPopup();
+      }
+    }
+    return;
+  }
+
+  // Bestehender Code...
+}
+
+// ============================================
+// SECTION 6: GLOBAL HELPER (in main.js)
+// ============================================
+
+// Füge in src/main.js hinzu:
+
+// Global helper for protection guide (called from popup buttons)
+window.showProtectionGuide = (threatType) => {
+  protectionGuide.show(threatType);
+};
+
+// ============================================
+// SECTION 7: CSS STYLES (add to style.css)
+// ============================================
+
+/* Cyber Threat Markers */
+.cyber-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cyber-marker .marker-pulse {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  opacity: 0.6;
+  animation: cyber-pulse 2s ease-in-out infinite;
+}
+
+@keyframes cyber-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 0.2;
+  }
+}
+
+.cyber-marker--c2 .marker-pulse {
+  background: radial-gradient(circle, rgba(220, 38, 38, 0.8) 0%, rgba(220, 38, 38, 0) 70%);
+  box-shadow: 0 0 20px rgba(220, 38, 38, 0.6);
+}
+
+.cyber-marker--malware .marker-pulse {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.8) 0%, rgba(139, 92, 246, 0) 70%);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.6);
+}
+
+.cyber-marker .marker-icon {
+  position: relative;
+  z-index: 2;
+  font-size: 1.8rem;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+}
+
+/* Cyber Popup */
+.cyber-popup .leaflet-popup-content-wrapper {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 2px solid rgba(139, 92, 246, 0.5);
+  border-radius: 12px;
+}
+
+.cyber-popup .leaflet-popup-tip {
+  background: #1a1a2e;
+  border-left: 2px solid rgba(139, 92, 246, 0.5);
+  border-bottom: 2px solid rgba(139, 92, 246, 0.5);
+}
+
+.popup-cyber {
+  color: #e5e7eb;
+}
+
+.popup-badge--high {
+  background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
+  color: #fff;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.popup-educational {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(139, 92, 246, 0.1);
+  border-left: 4px solid #8b5cf6;
+  border-radius: 4px;
+}
+
+.popup-educational h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  color: #a78bfa;
+}
+
+.popup-educational p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.popup-technical {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+}
+
+.popup-technical summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: #22c55e;
+  user-select: none;
+}
+
+.popup-technical dl {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.popup-technical dt {
+  font-weight: 600;
+  color: #9ca3af;
+  margin-top: 0.5rem;
+}
+
+.popup-technical dd {
+  margin: 0.25rem 0 0 0;
+  color: #e5e7eb;
+}
+
+.popup-technical code {
+  background: rgba(0, 0, 0, 0.5);
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #22c55e;
+}
+
+.popup-protection-preview {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(34, 197, 94, 0.1);
+  border-left: 4px solid #22c55e;
+  border-radius: 4px;
+}
+
+.popup-protection-preview h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.95rem;
+  color: #22c55e;
+}
+
+.popup-protection-preview ul {
+  margin: 0.5rem 0;
+  padding-left: 1.25rem;
+  font-size: 0.9rem;
+}
+
+.popup-protection-preview li {
+  margin-bottom: 0.25rem;
+}
+
+.popup-btn--guide {
+  margin-top: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.popup-btn--guide:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+}
+
+// ============================================
+// SECTION 8: TESTING
+// ============================================
+
+/**
+ * Test Cyber Layer Integration:
+ * 
+ * 1. Backend: ENABLE_CYBER_LAYER=true
+ * 2. Frontend: Klicke auf Cyber Layer Toggle in Controls
+ * 3. Onboarding Modal erscheint → Akzeptiere
+ * 4. Warte auf erstes Cyber Event (WebSocket)
+ * 5. Marker sollte erscheinen mit Pulse-Animation
+ * 6. Klicke Marker → Popup mit Educational Content
+ * 7. Klicke "Vollständigen Schutz-Guide anzeigen"
+ * 8. Protection Guide Modal öffnet sich
+ * 
+ * Expected Behavior:
+ * - Onboarding nur einmal pro Browser (LocalStorage)
+ * - Marker sind distinct (Rot für C2, Lila für Malware)
+ * - Popup enthält Educational + Technical + Protection Sections
+ * - Protection Guide ist scrollbar & responsive
+ */

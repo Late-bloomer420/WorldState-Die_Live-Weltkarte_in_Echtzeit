@@ -1,0 +1,293 @@
+/**
+ * controls-integration.patch
+ * Integration des Cyber Layer Toggles in controls.js
+ * 
+ * ANWENDUNG:
+ * 1. Öffne src/controls.js
+ * 2. Füge Cyber Layer Toggle hinzu
+ * 3. Update Event Handlers
+ */
+
+// ============================================
+// SECTION 1: HTML UPDATE (renderLayers method)
+// ============================================
+
+// Füge in der renderLayers() Methode hinzu:
+
+renderLayers() {
+  const layers = [
+    // ... bestehende Layers (conflicts, disasters, etc.)
+    
+    // NEU: Cyber Layer
+    {
+      id: 'cyber',
+      label: 'Cyber Threats',
+      icon: '🛡️',
+      description: 'Botnet C2 & Malware (Educational)',
+      badge: 'BETA',
+      enabled: this.state.layers.cyber,
+      className: 'layer-toggle--cyber'
+    }
+  ];
+
+  return `
+    <div class="controls__section">
+      <h3>Layer</h3>
+      <div class="controls__layers">
+        ${layers.map(layer => this.renderLayerToggle(layer)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ============================================
+// SECTION 2: LAYER TOGGLE RENDERING
+// ============================================
+
+renderLayerToggle(layer) {
+  const classes = [
+    'layer-toggle',
+    layer.className,
+    layer.enabled ? 'layer-toggle--active' : ''
+  ].filter(Boolean).join(' ');
+
+  return `
+    <button 
+      class="${classes}"
+      data-layer="${layer.id}"
+      title="${layer.description}"
+    >
+      <span class="layer-toggle__icon">${layer.icon}</span>
+      <span class="layer-toggle__label">${layer.label}</span>
+      ${layer.badge ? `<span class="layer-toggle__badge">${layer.badge}</span>` : ''}
+      <span class="layer-toggle__indicator"></span>
+    </button>
+  `;
+}
+
+// ============================================
+// SECTION 3: EVENT HANDLER UPDATE
+// ============================================
+
+// Im setupEventListeners(), füge hinzu:
+
+setupEventListeners() {
+  // ... bestehende Event Listeners
+  
+  // Layer toggles
+  this.container.addEventListener('click', async (e) => {
+    const layerBtn = e.target.closest('.layer-toggle');
+    if (!layerBtn) return;
+
+    const layerId = layerBtn.dataset.layer;
+    const currentState = this.state.layers[layerId];
+    
+    // Special handling for cyber layer (needs onboarding)
+    if (layerId === 'cyber') {
+      const success = await this.mapView.toggleCyberLayer(!currentState);
+      if (!success) {
+        // User declined onboarding, don't toggle
+        return;
+      }
+    } else {
+      // Standard layer toggle
+      this.mapView.toggleLayer(layerId, !currentState);
+    }
+
+    // Update state
+    this.state.layers[layerId] = !currentState;
+    this.render();
+  });
+}
+
+// ============================================
+// SECTION 4: CSS STYLES (add to style.css)
+// ============================================
+
+/* Cyber Layer Toggle - Special Styling */
+.layer-toggle--cyber {
+  border: 2px solid rgba(139, 92, 246, 0.5);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(109, 40, 217, 0.1) 100%);
+  position: relative;
+}
+
+.layer-toggle--cyber:hover {
+  border-color: rgba(139, 92, 246, 0.8);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(109, 40, 217, 0.2) 100%);
+}
+
+.layer-toggle--cyber.layer-toggle--active {
+  border-color: #8b5cf6;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(109, 40, 217, 0.3) 100%);
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+}
+
+.layer-toggle--cyber .layer-toggle__icon {
+  animation: cyber-shield-pulse 2s ease-in-out infinite;
+}
+
+@keyframes cyber-shield-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.6));
+  }
+  50% {
+    transform: scale(1.1);
+    filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.8));
+  }
+}
+
+.layer-toggle__badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  padding: 0.125rem 0.375rem;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 8px;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
+/* Educational Info Tooltip (optional enhancement) */
+.layer-toggle--cyber::after {
+  content: 'Educational threat intelligence from abuse.ch';
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.95);
+  color: #e5e7eb;
+  font-size: 0.75rem;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  z-index: 100;
+}
+
+.layer-toggle--cyber:hover::after {
+  opacity: 1;
+}
+
+// ============================================
+// SECTION 5: MOBILE RESPONSIVE
+// ============================================
+
+@media (max-width: 768px) {
+  .layer-toggle--cyber .layer-toggle__badge {
+    top: -6px;
+    right: -6px;
+    font-size: 0.6rem;
+    padding: 0.1rem 0.3rem;
+  }
+  
+  .layer-toggle--cyber::after {
+    /* Hide tooltip on mobile */
+    display: none;
+  }
+}
+
+// ============================================
+// SECTION 6: ACCESSIBILITY
+// ============================================
+
+// Add aria attributes for screen readers:
+
+renderLayerToggle(layer) {
+  const ariaLabel = layer.id === 'cyber' 
+    ? `${layer.label} - Educational threat intelligence layer. Shows Botnet C2 servers and Malware distribution hosts. Beta feature.`
+    : `${layer.label} - ${layer.description}`;
+
+  return `
+    <button 
+      class="${classes}"
+      data-layer="${layer.id}"
+      title="${layer.description}"
+      aria-label="${ariaLabel}"
+      aria-pressed="${layer.enabled}"
+    >
+      <!-- ... rest of button content -->
+    </button>
+  `;
+}
+
+// ============================================
+// SECTION 7: FEATURE FLAG CHECK
+// ============================================
+
+// Optional: Only show Cyber Layer if backend has it enabled
+// Add in controls.js initialization:
+
+async checkCyberLayerAvailability() {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_API_URL}/health`);
+    const data = await response.json();
+    
+    // Check if cyber layer is enabled on backend
+    const cyberEnabled = data.apis?.cyber?.enabled || false;
+    
+    if (!cyberEnabled) {
+      console.log('[Controls] Cyber Layer not available on backend');
+      // Remove cyber toggle from UI or mark as unavailable
+      this.features.cyberLayer = false;
+    } else {
+      this.features.cyberLayer = true;
+    }
+  } catch (error) {
+    console.error('[Controls] Failed to check cyber layer availability:', error);
+    this.features.cyberLayer = false;
+  }
+}
+
+// Then in renderLayers(), conditionally include:
+
+renderLayers() {
+  const layers = [
+    // ... other layers
+  ];
+
+  // Only add cyber layer if available
+  if (this.features.cyberLayer) {
+    layers.push({
+      id: 'cyber',
+      label: 'Cyber Threats',
+      // ... rest of config
+    });
+  }
+
+  return html;
+}
+
+// ============================================
+// SECTION 8: TESTING
+// ============================================
+
+/**
+ * Test Controls Integration:
+ * 
+ * Visual Test:
+ * 1. Öffne WorldState in Browser
+ * 2. Cyber Layer Toggle sollte sichtbar sein
+ * 3. Hat BETA Badge oben rechts
+ * 4. Hat Shield-Icon mit Pulse-Animation
+ * 5. Hover zeigt Tooltip (Desktop only)
+ * 
+ * Functional Test:
+ * 1. Klicke auf Cyber Layer Toggle
+ * 2. Onboarding Modal erscheint (beim ersten Mal)
+ * 3. Akzeptiere → Toggle wird aktiv (glow effect)
+ * 4. Layer ist jetzt in der Karte sichtbar
+ * 5. Klicke erneut → Layer wird deaktiviert
+ * 6. Refresh Browser → Onboarding wird NICHT mehr gezeigt (LocalStorage)
+ * 
+ * Accessibility Test:
+ * 1. Tab durch die Controls
+ * 2. Cyber Toggle sollte fokussierbar sein
+ * 3. Enter/Space sollte den Layer togglen
+ * 4. Screen Reader sollte aria-label vorlesen
+ */

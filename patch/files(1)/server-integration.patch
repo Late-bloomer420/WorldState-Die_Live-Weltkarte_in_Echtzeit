@@ -1,0 +1,141 @@
+/**
+ * server-integration.patch
+ * Cyber Layer Integration für server/index.js
+ * 
+ * ANWENDUNG:
+ * 1. Öffne server/index.js
+ * 2. Füge die Imports am Anfang hinzu
+ * 3. Initialisiere CyberFetcher nach ApiFetcher
+ * 4. Erweitere den Event-Generator
+ * 5. Update den Health-Endpoint
+ */
+
+// ============================================
+// SECTION 1: IMPORTS (am Anfang der Datei)
+// ============================================
+
+// Füge nach dem ApiFetcher Import hinzu:
+import CyberFetcher from './cyber-fetcher.js';
+
+// ============================================
+// SECTION 2: INITIALIZATION (nach ApiFetcher)
+// ============================================
+
+// Füge nach "const apiFetcher = new ApiFetcher();" hinzu:
+const cyberFetcher = new CyberFetcher();
+
+// Zeige beim Start ob Cyber Layer aktiv ist:
+if (cyberFetcher.enabled) {
+  console.log('🛡️  [Cyber Layer] ENABLED - Educational threat intelligence active');
+  console.log('📚 [Cyber Layer] Source: abuse.ch (Feodo Tracker + URLhaus)');
+} else {
+  console.log('🛡️  [Cyber Layer] DISABLED - Set ENABLE_CYBER_LAYER=true to activate');
+}
+
+// ============================================
+// SECTION 3: EVENT GENERATOR UPDATE
+// ============================================
+
+// Finde die Funktion "generateHybridEvent()" und erweitere sie:
+
+async function generateHybridEvent() {
+  // BESTEHENDER CODE (60% Real API, 40% Sim)
+  const useRealAPI = Math.random() < 0.6;
+  
+  if (useRealAPI) {
+    // Existing real API code...
+    // (Earthquakes + Weather)
+  }
+
+  // NEU: 10% Chance für Cyber Events (wenn enabled)
+  if (cyberFetcher.enabled && Math.random() < 0.1) {
+    const cyberEvent = await cyberFetcher.getRandomCyberThreat();
+    if (cyberEvent) {
+      console.log(`[Event] 🛡️  Cyber Threat: ${cyberEvent.subtype} in ${cyberEvent.location.country}`);
+      return cyberEvent;
+    }
+  }
+
+  // BESTEHENDER FALLBACK CODE
+  // Falls Real API oder Cyber fehlschlagen → Simulated Events
+  return generateSimulatedEvent();
+}
+
+// ============================================
+// SECTION 4: HEALTH ENDPOINT UPDATE
+// ============================================
+
+// Erweitere den /health Endpoint:
+
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    events: eventCount,
+    apis: {
+      usgs: apiFetcher.getHealth().usgs,
+      weather: apiFetcher.getHealth().weather,
+      cyber: cyberFetcher.getHealth() // NEU
+    },
+    cache: {
+      usgs: apiFetcher.cache.usgs.size,
+      weather: apiFetcher.cache.weather.size,
+      geocode: cyberFetcher.cache.geocode.size // NEU
+    }
+  });
+});
+
+// ============================================
+// SECTION 5: ENVIRONMENT VARIABLE (railway.json)
+// ============================================
+
+// Füge in railway.json bei "build.buildCommand" hinzu:
+{
+  "build": {
+    "builder": "NIXPACKS",
+    "buildCommand": "npm install"
+  },
+  "deploy": {
+    "startCommand": "node server/index.js",
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  },
+  "env": {
+    "PORT": "${{PORT}}",
+    "ENABLE_CYBER_LAYER": "false"  // NEU - auf 'true' setzen zum Aktivieren
+  }
+}
+
+// ============================================
+// SECTION 6: VERCEL ENV VARIABLE (.env.local)
+// ============================================
+
+// Erstelle .env.local im Vercel-Projekt:
+VITE_ENABLE_CYBER_LAYER=false
+
+// Setze auf 'true' wenn du den Layer aktivieren willst
+// (Dann muss auch Backend railway.json ENABLE_CYBER_LAYER=true haben)
+
+// ============================================
+// TESTING
+// ============================================
+
+// Test 1: Backend startet mit Cyber Layer disabled
+// → Logs sollten zeigen: "🛡️ [Cyber Layer] DISABLED"
+
+// Test 2: Aktiviere Layer (ENABLE_CYBER_LAYER=true)
+// → Logs sollten zeigen: "🛡️ [Cyber Layer] ENABLED"
+// → Health endpoint sollte cyber: {...} enthalten
+
+// Test 3: Warte auf Cyber Event im Stream
+// → Sollte type: 'cyber', subtype: 'c2_server' oder 'malware_host' haben
+// → Sollte educational Feld enthalten
+
+// ============================================
+// ROLLBACK
+// ============================================
+
+// Falls Probleme auftreten:
+// 1. Setze ENABLE_CYBER_LAYER=false
+// 2. Cyber Events werden nicht mehr generiert
+// 3. Rest der App läuft normal weiter
